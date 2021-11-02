@@ -62,6 +62,10 @@ class DlmEngineLock(object):
         return self._endpoint
 
     @property
+    def lock_name(self):
+        return self._lock_name
+
+    @property
     def wait(self):
         return self._wait
 
@@ -71,7 +75,7 @@ class DlmEngineLock(object):
 
     @property
     def lock_url(self):
-        return "{0}locks/{1}".format(self._endpoint, self._lock_name)
+        return "{0}locks/{1}".format(self._endpoint, self.lock_name)
 
     def acquire(self):
         self.log.debug("waiting is set to {0}".format(self.wait))
@@ -167,6 +171,7 @@ class DlmEngineUpdater(object):
             wait=self.config.getboolean('main', 'wait', fallback=False),
             wait_max=self.config.getint('main', 'wait_max', fallback=3600),
         )
+        self._dlm_lock_aquired = False
 
     @property
     def config(self):
@@ -175,6 +180,14 @@ class DlmEngineUpdater(object):
     @property
     def dlm_lock(self):
         return self._dlm_lock
+
+    @property
+    def dlm_lock_acquired(self):
+        return self._dlm_lock_aquired
+
+    @dlm_lock_acquired.setter
+    def dlm_lock_acquired(self, value):
+        self._dlm_lock_aquired = value
 
     @property
     def lock(self):
@@ -241,13 +254,40 @@ class DlmEngineUpdater(object):
 
     def dlm_lock_get(self):
         self.dlm_lock.acquire()
+        self.dlm_lock_acquired = True
+        self.do_ext_notify(
+            phase='main',
+            script='none',
+            return_code=0
+        )
         self.task = "pre_update"
 
     def dlm_lock_release(self):
         self.log.info("releasing lock")
         self.dlm_lock.release()
+        self.dlm_lock_acquired = False
+        self.do_ext_notify(
+            phase='main',
+            script='none',
+            return_code=0,
+            updater_running=False
+        )
         del self.task
         sys.exit(0)
+
+    def do_ext_notify(self, phase, script, return_code, updater_running=True):
+        files = self.get_scripts('ext_notify.d')
+        for _file in files:
+            self.log.info("running ext notify script: {0}".format(_file))
+            self.execute_shell([
+                _file,
+                self.dlm_lock.lock_name,
+                str(self._dlm_lock_aquired),
+                str(updater_running),
+                phase,
+                script,
+                str(return_code)
+            ])
 
     def get_scripts(self, path):
         _path = self.config.get('main', path)
@@ -280,14 +320,26 @@ class DlmEngineUpdater(object):
         files = self.get_scripts('needs_update.d')
         for _file in files:
             self.log.info("running: {0}".format(_file))
-            if self.execute_shell([_file]) != 0:
+            return_code = self.execute_shell([_file])
+            if return_code != 0:
                 self.log.info("updates are available")
                 update = True
+            self.do_ext_notify(
+                phase='needs_update',
+                script=_file,
+                return_code=return_code
+            )
             self.log.info("running: {0} done".format(_file))
         if update:
             self.task = "lock_get"
         else:
             self.log.info("no updates available")
+            self.do_ext_notify(
+                phase='main',
+                script='none',
+                return_code=0,
+                updater_running=False
+            )
             sys.exit(0)
 
     def update(self):
@@ -295,20 +347,33 @@ class DlmEngineUpdater(object):
         files = self.get_scripts('update.d')
         for _file in files:
             self.log.info("running: {0}".format(_file))
-            if self.execute_shell([_file]) != 0:
+            return_code = self.execute_shell([_file])
+            if return_code != 0:
                 self.log.info("script failed, stopping, keeping lock")
                 sys.exit(1)
+            self.do_ext_notify(
+                phase='update',
+                script=_file,
+                return_code=return_code
+            )
             self.log.info("running: {0} done".format(_file))
         self.task = "needs_reboot"
 
     def post_update(self):
         self.log.info("running post_update scripts")
+        self.dlm_lock_acquired = True
         files = self.get_scripts('post_update.d')
         for _file in files:
             self.log.info("running: {0}".format(_file))
-            if self.execute_shell([_file]) != 0:
+            return_code = self.execute_shell([_file])
+            if return_code != 0:
                 self.log.info("script failed, stopping, keeping lock")
                 sys.exit(1)
+            self.do_ext_notify(
+                phase='post_update',
+                script=_file,
+                return_code=return_code
+            )
             self.log.info("running: {0} done".format(_file))
         self.task = "lock_release"
 
@@ -317,9 +382,15 @@ class DlmEngineUpdater(object):
         files = self.get_scripts('pre_update.d')
         for _file in files:
             self.log.info("running: {0}".format(_file))
-            if self.execute_shell([_file]) != 0:
+            return_code = self.execute_shell([_file])
+            if return_code != 0:
                 self.log.info("script failed, stopping, keeping lock")
                 sys.exit(1)
+            self.do_ext_notify(
+                phase='pre_update',
+                script=_file,
+                return_code=return_code
+            )
             self.log.info("running: {0} done".format(_file))
         self.task = "update"
 
@@ -334,8 +405,14 @@ class DlmEngineUpdater(object):
         files = self.get_scripts('needs_reboot.d')
         for _file in files:
             self.log.info("running: {0}".format(_file))
-            if self.execute_shell([_file]) != 0:
+            return_code = self.execute_shell([_file])
+            if return_code != 0:
                 self.log.info("running: {0} done".format(_file))
+                self.do_ext_notify(
+                    phase='needs_reboot',
+                    script=_file,
+                    return_code=return_code
+                )
                 reboot = True
                 break
             else:

@@ -1,0 +1,12 @@
+LICENSE.txt
+MANIFEST.in
+README.md
+setup.cfg
+setup.py
+DlmEngineUpdater.egg-info/PKG-INFO
+DlmEngineUpdater.egg-info/SOURCES.txt
+DlmEngineUpdater.egg-info/dependency_links.txt
+DlmEngineUpdater.egg-info/requires.txt
+DlmEngineUpdater.egg-info/top_level.txt
+contrib/dlm_engine_updater
+dlm_engine_updater/__init__.py
