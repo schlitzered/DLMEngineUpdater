@@ -153,6 +153,7 @@ class DlmEngineLock(object):
                     sys.exit(1)
             except requests.exceptions.ConnectionError as err:
                 self.log.error("connection error, retrying: {0}".format(err))
+                retries -= 1
                 time.sleep(5)
         self.log.fatal("could not release lock")
         sys.exit(1)
