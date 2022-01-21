@@ -126,29 +126,36 @@ class DlmEngineLock(object):
 
     def release(self):
         self.log.info("trying to release: {0}".format(self.lock_url))
-        resp = requests.delete(
-            json={
-                "data": {
-                    "acquired_by": socket.getfqdn()
-                }
-            },
-            headers={
-                'x-id': self.secret_id,
-                'x-secret': self.secret
-            },
-            timeout=2.0,
-            url=self.lock_url,
-            verify=self.ca
-
-        )
-        self.log.debug("http status_code is: {0}".format(resp.status_code))
-        self.log.debug("http_response is {0}".format(resp.json()))
-        if resp.status_code == 200:
-            self.log.info("success releasing lock")
-            return
-        else:
-            self.log.error("could not release lock: {0}".format(resp.json()))
-            sys.exit(1)
+        retries = 10
+        while retries > 0:
+            try:
+                resp = requests.delete(
+                    json={
+                        "data": {
+                            "acquired_by": socket.getfqdn()
+                        }
+                    },
+                    headers={
+                        'x-id': self.secret_id,
+                        'x-secret': self.secret
+                    },
+                    timeout=2.0,
+                    url=self.lock_url,
+                    verify=self.ca
+                )
+                self.log.debug("http status_code is: {0}".format(resp.status_code))
+                self.log.debug("http_response is {0}".format(resp.json()))
+                if resp.status_code == 200:
+                    self.log.info("success releasing lock")
+                    return
+                else:
+                    self.log.error("could not release lock: {0}".format(resp.json()))
+                    sys.exit(1)
+            except requests.exceptions.ConnectionError as err:
+                self.log.error("connection error, retrying: {0}".format(err))
+                time.sleep(5)
+        self.log.fatal("could not release lock")
+        sys.exit(1)
 
 
 class DlmEngineUpdater(object):
