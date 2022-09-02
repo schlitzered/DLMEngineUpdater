@@ -1,5 +1,7 @@
 import argparse
+import calendar
 import configparser
+import datetime
 import subprocess
 import logging
 import os
@@ -25,11 +27,19 @@ def main():
                         default=False,
                         help="has to be used from init systems, to indicated that the script was called while booting.")
 
+    parser.add_argument("--date_constraint", dest="date_constraint", action="store",
+                        default=None,
+                        help="exit if date constraint is not fulfilled."
+                             "example value: 3:Friday"
+                             "would only run if this is the 3rd Friday of a month."
+                        )
+
     parsed_args = parser.parse_args()
 
     instance = DlmEngineUpdater(
         cfg=parsed_args.cfg,
-        rbt=parsed_args.rbt,
+        after_reboot=parsed_args.rbt,
+        date_constraint=parsed_args.date_constraint
     )
     instance.work()
 
@@ -163,15 +173,17 @@ class DlmEngineLock(object):
 
 
 class DlmEngineUpdater(object):
-    def __init__(self, cfg, rbt):
+    def __init__(self, cfg, after_reboot, date_constraint):
         self._config_file = cfg
         self._config = configparser.ConfigParser()
         self._config_dict = None
-        self._rbt = rbt
+        self._after_reboot = after_reboot
+        self._date_constraint = None
         self.log = logging.getLogger('application')
         self.config.read_file(open(self._config_file))
         self._logging()
         self._lock = PidFile(self.config.get('main', 'lock'))
+        self.date_constraint = date_constraint
         self._dlm_lock = DlmEngineLock(
             log=self.log,
             ca=self.config.get('main', 'ca', fallback=None),
@@ -187,6 +199,32 @@ class DlmEngineUpdater(object):
     @property
     def config(self):
         return self._config
+
+    @property
+    def date_constraint(self):
+        return self._date_constraint
+
+    @date_constraint.setter
+    def date_constraint(self, value):
+        if not value:
+            return
+        try:
+            nth, day = value.split(':', maxsplit=1)
+        except ValueError:
+            self.log.fatal("Invalid date constraint")
+            sys.exit(1)
+        try:
+            nth = int(nth)
+        except ValueError:
+            self.log.fatal("invalid date constraint, number must be between 1 and 6")
+            sys.exit(1)
+        if nth not in range(1, 6):
+            self.log.fatal("invalid date constraint, number must be between 1 and 6")
+            sys.exit(1)
+        if day not in calendar.day_abbr:
+            self.log.fatal("Invalid date constraint, day must be one of {0}".format(list(calendar.day_abbr)))
+            sys.exit(1)
+        self._date_constraint = {'nth': nth, 'day': day}
 
     @property
     def dlm_lock(self):
@@ -205,8 +243,8 @@ class DlmEngineUpdater(object):
         return self._lock
 
     @property
-    def rbt(self):
-        return self._rbt
+    def after_reboot(self):
+        return self._after_reboot
 
     def _logging(self):
         logfmt = logging.Formatter('%(asctime)sUTC - %(levelname)s - %(threadName)s - %(message)s')
@@ -255,8 +293,39 @@ class DlmEngineUpdater(object):
             self.log.fatal("could not set state: {0}".format(err))
             sys.exit(1)
 
-    def check_rbt(self):
-        if self.rbt:
+    def check_date_constraint(self):
+        if not self.date_constraint:
+            self.log.info("no date constraint set")
+        self.log.info("date constraint set to {0}. {1}".format(
+            self.date_constraint['nth'],
+            self.date_constraint['day']
+        ))
+        now = datetime.datetime.now()
+        month_start = datetime.datetime(year=now.year, month=now.month, day=1)
+        delta = now - month_start
+        if now.strftime("%a") != self.date_constraint['day']:
+            self.log.fatal("today is not {0}".format(
+                self.date_constraint['day']
+            ))
+        nth_count = 0
+        for i in range(1, delta.days + 2):
+            _day = datetime.datetime(year=now.year, month=now.month, day=i)
+            if _day.strftime("%a") == self.date_constraint['day']:
+                nth_count += 1
+        if nth_count != self.date_constraint['nth']:
+            self.log.fatal("today is not the {0}. {1}".format(
+                self.date_constraint['nth'],
+                self.date_constraint['day']
+            ))
+            sys.exit(1)
+        self.log.fatal("today is the {0}. {1}, running dlm_engine_updater".format(
+            self.date_constraint['nth'],
+            self.date_constraint['day']
+        ))
+        return True
+
+    def check_reboot(self):
+        if self.after_reboot:
             if self.task != 'post_update':
                 self.log.info("reboot was not triggered by dlm_engine_updater, exiting")
                 sys.exit(0)
@@ -435,8 +504,9 @@ class DlmEngineUpdater(object):
             self.task = "post_update"
 
     def work(self):
+        self.check_date_constraint()
         self.lock.acquire()
-        self.check_rbt()
+        self.check_reboot()
         while True:
             task = self.task
             if task == "needs_update":
