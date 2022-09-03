@@ -296,6 +296,7 @@ class DlmEngineUpdater(object):
     def check_date_constraint(self):
         if not self.date_constraint:
             self.log.info("no date constraint set")
+            return
         self.log.info("date constraint set to {0}. {1}".format(
             self.date_constraint['nth'],
             self.date_constraint['day']

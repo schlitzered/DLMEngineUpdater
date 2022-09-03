@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='DlmEngineUpdater',
-    version='0.0.7',
+    version='0.0.8',
     description='DlmEngine, distributed lock implementation on top of MongoDB and Redis',
     long_description="""
 DLMEngine implements a restful interface that can be used to implement distributed locks.
