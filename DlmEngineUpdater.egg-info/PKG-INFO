@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: DlmEngineUpdater
-Version: 0.0.7
+Version: 0.0.8
 Summary: DlmEngine, distributed lock implementation on top of MongoDB and Redis
 Home-page: https://github.com/schlitzered/DlmEngineUpdater
 Author: schlitzer
