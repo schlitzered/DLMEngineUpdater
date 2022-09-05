@@ -34,12 +34,18 @@ def main():
                              "would only run if this is the 3rd Friday of a month."
                         )
 
+    parser.add_argument("--random_sleep", dest="random_sleep", action="store", required=False,
+                        default=0, type=int,
+                        help="add random sleep before acutally doing something"
+                        )
+
     parsed_args = parser.parse_args()
 
     instance = DlmEngineUpdater(
         cfg=parsed_args.cfg,
         after_reboot=parsed_args.rbt,
-        date_constraint=parsed_args.date_constraint
+        date_constraint=parsed_args.date_constraint,
+        random_sleep=parsed_args.random_sleep
     )
     instance.work()
 
@@ -88,6 +94,7 @@ class DlmEngineLock(object):
         return "{0}locks/{1}".format(self._endpoint, self.lock_name)
 
     def acquire(self):
+        # todo check if lock is already acquired
         self.log.debug("waiting is set to {0}".format(self.wait))
         self.log.debug("max wait time is set to {0}".format(self.wait_max))
         if self.wait:
@@ -111,28 +118,31 @@ class DlmEngineLock(object):
 
     def _acquire(self):
         self.log.info("trying to acquire: {0}".format(self.lock_url))
-        resp = requests.post(
-            json={
-                "data": {
-                    "acquired_by": socket.getfqdn()
-                }
-            },
-            headers={
-                'x-id': self.secret_id,
-                'x-secret': self.secret
-            },
-            timeout=2.0,
-            url=self.lock_url,
-            verify=self.ca
-        )
-        self.log.debug("http status_code is: {0}".format(resp.status_code))
-        self.log.debug("http_response is {0}".format(resp.json()))
-        if resp.status_code == 201:
-            self.log.info("success acquiring lock")
-            return True
-        else:
-            self.log.error("could not acquire lock: {0}".format(resp.json()))
-            return False
+        try:
+            resp = requests.post(
+                json={
+                    "data": {
+                        "acquired_by": socket.getfqdn()
+                    }
+                },
+                headers={
+                    'x-id': self.secret_id,
+                    'x-secret': self.secret
+                },
+                timeout=10.0,
+                url=self.lock_url,
+                verify=self.ca
+            )
+            self.log.debug("http status_code is: {0}".format(resp.status_code))
+            self.log.debug("http_response is {0}".format(resp.json()))
+            if resp.status_code == 201:
+                self.log.info("success acquiring lock")
+                return True
+            else:
+                self.log.error("could not acquire lock: {0}".format(resp.json()))
+                return False
+        except requests.RequestException as err:
+            self.log.error("request error: {0}".format(err))
 
     def release(self):
         self.log.info("trying to release: {0}".format(self.lock_url))
@@ -161,10 +171,7 @@ class DlmEngineLock(object):
                 else:
                     self.log.error("could not release lock: {0}".format(resp.json()))
                     sys.exit(1)
-            except (
-                requests.exceptions.ConnectionError,
-                requests.exceptions.Timeout
-            ) as err:
+            except requests.RequestException as err:
                 self.log.error("connection error, retrying: {0}".format(err))
                 retries -= 1
                 time.sleep(5)
@@ -173,12 +180,13 @@ class DlmEngineLock(object):
 
 
 class DlmEngineUpdater(object):
-    def __init__(self, cfg, after_reboot, date_constraint):
+    def __init__(self, cfg, after_reboot, date_constraint, random_sleep):
         self._config_file = cfg
         self._config = configparser.ConfigParser()
         self._config_dict = None
         self._after_reboot = after_reboot
         self._date_constraint = None
+        self._random_sleep = random_sleep
         self.log = logging.getLogger('application')
         self.config.read_file(open(self._config_file))
         self._logging()
@@ -211,15 +219,15 @@ class DlmEngineUpdater(object):
         try:
             nth, day = value.split(':', maxsplit=1)
         except ValueError:
-            self.log.fatal("Invalid date constraint")
+            self.log.fatal("Invalid date constraint, must match NUM:DAY_ABBR")
             sys.exit(1)
         try:
             nth = int(nth)
         except ValueError:
-            self.log.fatal("invalid date constraint, number must be between 1 and 6")
+            self.log.fatal("Invalid date constraint, number must be between 1 and 4")
             sys.exit(1)
-        if nth not in range(1, 6):
-            self.log.fatal("invalid date constraint, number must be between 1 and 6")
+        if nth not in range(1, 5):
+            self.log.fatal("Invalid date constraint, number must be between 1 and 4")
             sys.exit(1)
         if day not in calendar.day_abbr:
             self.log.fatal("Invalid date constraint, day must be one of {0}".format(list(calendar.day_abbr)))
@@ -260,6 +268,12 @@ class DlmEngineUpdater(object):
             self.log.addHandler(handler)
         self.log.setLevel(aap_level)
         self.log.debug("logger is up")
+
+    def random_sleep(self):
+        sleep = random.randint(0, self._random_sleep)
+        self.log.info("sleeping {0} seconds".format(sleep))
+        time.sleep(sleep)
+        self.log.info("sleeping {0} seconds,done ".format(sleep))
 
     def execute_shell(self, args):
         p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
@@ -508,6 +522,7 @@ class DlmEngineUpdater(object):
         self.check_date_constraint()
         self.lock.acquire()
         self.check_reboot()
+        self.random_sleep()
         while True:
             task = self.task
             if task == "needs_update":
