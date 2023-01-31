@@ -322,6 +322,7 @@ class DlmEngineUpdater(object):
             self.log.fatal("today is not {0}".format(
                 self.date_constraint['day']
             ))
+            sys.exit(1)
         nth_count = 0
         for i in range(1, delta.days + 2):
             _day = datetime.datetime(year=now.year, month=now.month, day=i)
