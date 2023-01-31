@@ -1,2 +1,4 @@
 .idea
+dist
+DlmEngineUpdater.egg-info
 venv
