@@ -2,14 +2,14 @@ from setuptools import setup, find_packages
 
 setup(
     name='DlmEngineUpdater',
-    version='0.0.10',
+    version='0.2.0',
     description='DlmEngine, distributed lock implementation on top of MongoDB and Redis',
     long_description="""
 DLMEngine implements a restful interface that can be used to implement distributed locks.
 
 The main intention was to orchestrate automated system updates, so only one server at a time will do a update.
 
-Copyright (c) 2019, Stephan Schultchen.
+Copyright (c) 2023, Stephan Schultchen.
 
 License: MIT (see LICENSE for details)
     """,
