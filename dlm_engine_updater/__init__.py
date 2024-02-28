@@ -13,7 +13,7 @@ import time
 from logging.handlers import TimedRotatingFileHandler
 
 from pep3143daemon import PidFile
-import requests
+import httpx
 
 
 def main():
@@ -77,7 +77,7 @@ class DlmEngineLock(object):
         self._org_id = org_id
         self._secret = secret
         self._secret_id = secret_id
-        self._session = None
+        self._dlm_api = None
         self._wait = wait
         self._wait_max = wait_max
         self.log = log
@@ -86,7 +86,7 @@ class DlmEngineLock(object):
     def api_version(self):
         if not self._api_version:
             url = f"{self.endpoint}/versions"
-            resp = self.session.get(
+            resp = self.dlm_api.get(
                 url=url,
             )
             if resp.status_code == 404:
@@ -122,16 +122,17 @@ class DlmEngineLock(object):
         return self._secret_id
 
     @property
-    def session(self):
-        if not self._session:
-            self._session = requests.Session()
-            self._session.headers = {
-                "x-id": self.secret_id,
-                "x-secret-id": self.secret_id,
-                "x-secret": self.secret,
-            }
-            self._session.verify = self.ca
-        return self._session
+    def dlm_api(self):
+        if not self._dlm_api:
+            self._dlm_api = httpx.Client(
+                verify=self.ca,
+                headers={
+                    "x-id": self.secret_id,
+                    "x-secret-id": self.secret_id,
+                    "x-secret": self.secret,
+                },
+            )
+        return self._dlm_api
 
     @property
     def lock_name(self):
@@ -193,7 +194,7 @@ class DlmEngineLock(object):
         if self._acquire_check():
             return True
         try:
-            resp = self.session.post(
+            resp = self.dlm_api.post(
                 json=self.payload_acquire,
                 timeout=10.0,
                 url=self.lock_url,
@@ -206,13 +207,12 @@ class DlmEngineLock(object):
             else:
                 self.log.error(f"could not acquire lock: {resp.json()}")
                 return False
-        except requests.RequestException as err:
-            self.log.error(f"request error: {err}")
+        except httpx.HTTPError as err:
+            self.log.error(f"request error, retrying: {err}")
 
     def _acquire_check(self):
         self.log.info("checking if lock has been acquired")
-        resp = self.session.get(
-            json=self.payload_acquire,
+        resp = self.dlm_api.get(
             timeout=10.0,
             url=self.lock_url,
         )
@@ -240,7 +240,8 @@ class DlmEngineLock(object):
         retries = 10
         while retries > 0:
             try:
-                resp = self.session.delete(
+                resp = self.dlm_api.request(
+                    method="DELETE",
                     json=self.payload_release(),
                     timeout=10.0,
                     url=self.lock_url,
@@ -253,8 +254,8 @@ class DlmEngineLock(object):
                 else:
                     self.log.error(f"could not release lock: {resp.json()}")
                     sys.exit(1)
-            except requests.RequestException as err:
-                self.log.error(f"connection error, retrying: {err}")
+            except httpx.HTTPError as err:
+                self.log.error(f"request error, retrying: {err}")
                 retries -= 1
                 time.sleep(5)
         self.log.fatal("could not release lock")
@@ -559,7 +560,9 @@ class DlmEngineUpdater(object):
             return_code = self.execute_shell([_file])
             if return_code != 0:
                 self.log.info("script failed, stopping, keeping lock")
-                self.on_failure(phase="post_update", script=_file, return_code=return_code)
+                self.on_failure(
+                    phase="post_update", script=_file, return_code=return_code
+                )
                 sys.exit(1)
             self.do_ext_notify(
                 phase="post_update", script=_file, return_code=return_code
@@ -575,7 +578,9 @@ class DlmEngineUpdater(object):
             return_code = self.execute_shell([_file])
             if return_code != 0:
                 self.log.info("script failed, stopping, keeping lock")
-                self.on_failure(phase="pre_update", script=_file, return_code=return_code)
+                self.on_failure(
+                    phase="pre_update", script=_file, return_code=return_code
+                )
                 sys.exit(1)
             self.do_ext_notify(
                 phase="pre_update", script=_file, return_code=return_code
