@@ -254,7 +254,7 @@ class DlmEngineLock(object):
                 else:
                     self.log.error(f"could not release lock: {resp.json()}")
                     sys.exit(1)
-            except httpx.HTTPError as err:
+            except (httpx.HTTPError, httpx.ConnectError) as err:
                 self.log.error(f"request error, retrying: {err}")
                 retries -= 1
                 time.sleep(5)
