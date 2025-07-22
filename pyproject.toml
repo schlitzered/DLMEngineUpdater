@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling", "hatch-requirements-txt"]
+build-backend = "hatchling.build"
+
+[project]
+name = "DlmEngineUpdater"
+version = "0.4.0"
+requires-python = ">=3.4"
+authors = [
+  {name = "Stephan.Schultchen", email = "stephan.schultchen@gmail.com"},
+]
+description = "Distributed Lock Engine API OS Updater"
+dynamic = ["dependencies"]
+license = {file = "LICENSE.txt"}
+keywords = []
+classifiers = [
+  "Programming Language :: Python"
+]
+
+[project.scripts]
+dlm_engine_updater = "dlm_engine_updater:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["dlm_engine_updater"]
+
+[tool.hatch.metadata.hooks.requirements_txt]
+files = ["requirements.txt"]
+
