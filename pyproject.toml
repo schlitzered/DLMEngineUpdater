@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "DlmEngineUpdater"
-version = "0.4.0"
+version = "0.4.1"
 requires-python = ">=3.4"
 authors = [
   {name = "Stephan.Schultchen", email = "stephan.schultchen@gmail.com"},
