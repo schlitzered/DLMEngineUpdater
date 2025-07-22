@@ -493,7 +493,11 @@ class DlmEngineUpdater(object):
         else:
             _path = self.config.get("main", path)
         files = list()
-        candidates = os.listdir(_path)
+        try:
+            candidates = os.listdir(_path)
+        except FileNotFoundError as err:
+            self.log.fatal(f"could not list directory: {err}")
+            sys.exit(1)
         candidates.sort()
         for _file in candidates:
             _file = os.path.join(_path, _file)
