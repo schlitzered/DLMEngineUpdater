@@ -68,13 +68,19 @@ def main():
 
 class DlmEngineLock(object):
     def __init__(
-        self, log, lock_name, ca, secret, secret_id, endpoint, wait, wait_max, org_id
+        self,
+        log,
+        lock_name,
+        ca,
+        secret,
+        secret_id,
+        endpoint,
+        wait,
+        wait_max,
     ):
-        self._api_version = None
         self._ca = ca
         self._endpoint = endpoint
         self._lock_name = lock_name
-        self._org_id = org_id
         self._secret = secret
         self._secret_id = secret_id
         self._dlm_api = None
@@ -84,20 +90,13 @@ class DlmEngineLock(object):
 
     @property
     def api_version(self):
-        if not self._api_version:
-            url = f"{self.endpoint}/versions"
-            resp = self.dlm_api.get(
-                url=url,
-            )
-            if resp.status_code == 404:
-                self._api_version = "1"
-            else:
-                for version in resp.json()["versions"]:
-                    if not self._api_version:
-                        self._api_version = version["version"]
-                    elif version["version"] > self._api_version:
-                        self._api_version = version["version"]
-        return self._api_version
+        if self.endpoint.endswith("/api/v1/"):
+            return "1"
+        elif self.endpoint.endswith("/api/v2/"):
+            return "2"
+        else:
+            self.log.fatal(f"unsupported api version: {self._endpoint}")
+            sys.exit(1)
 
     @property
     def ca(self):
@@ -105,13 +104,7 @@ class DlmEngineLock(object):
 
     @property
     def endpoint(self):
-        if self._endpoint.endswith("/api/v1/"):
-            return self._endpoint[:-8]
         return self._endpoint
-
-    @property
-    def org_id(self):
-        return self._org_id
 
     @property
     def secret(self):
@@ -144,10 +137,12 @@ class DlmEngineLock(object):
             return {"data": {"acquired_by": socket.getfqdn()}}
         elif self.api_version == "2":
             return {"acquired_by": socket.getfqdn()}
+        return None
 
     def payload_release(self):
         if self.api_version == "1":
             return {"data": {"acquired_by": socket.getfqdn()}}
+        return None
 
     @property
     def wait(self):
@@ -159,16 +154,9 @@ class DlmEngineLock(object):
 
     @property
     def lock_url(self):
-        if self.api_version == "1":
-            return f"{self.endpoint}/api/v1/locks/{self.lock_name}"
-        elif self.api_version == "2":
-            return f"{self.endpoint}/api/v2/orgs/{self.org_id}/locks/{self.lock_name}"
-        else:
-            self.log.fatal(f"unsupported api version: {self.api_version}")
-            sys.exit(1)
+        return f"{self.endpoint}locks/{self.lock_name}"
 
     def acquire(self):
-        # todo check if lock is already acquired
         self.log.debug(f"waiting is set to {self.wait}")
         self.log.debug(f"max wait time is set to {self.wait_max}")
         if self.wait:
@@ -218,19 +206,19 @@ class DlmEngineLock(object):
         )
         if not resp.status_code == 200:
             self.log.info("lock currently not present in the system")
-            return
+            return None
         if self.api_version == "1":
             if not resp.json()["data"]["acquired_by"] == socket.getfqdn():
                 self.log.info(
                     f"lock is currently acquired by {resp.json()['data']['acquired_by']}"
                 )
-                return
+                return None
         elif self.api_version == "2":
             if not resp.json()["acquired_by"] == socket.getfqdn():
                 self.log.info(
                     f"lock is currently acquired by {resp.json()['acquired_by']}"
                 )
-                return
+                return None
 
         self.log.info("lock has been already acquired by this instance")
         return True
@@ -268,18 +256,17 @@ class DlmEngineUpdater(object):
         self._config = configparser.ConfigParser()
         self._config_dict = None
         self._after_reboot = after_reboot
-        self._date_constraint = None
+        self._date_constraints = None
         self._random_sleep = random_sleep
         self.log = logging.getLogger("application")
         self.config.read_file(open(self._config_file))
         self._logging()
         self._lock = PidFile(self.config.get("main", "lock"))
-        self.date_constraint = date_constraint
+        self.date_constraints = date_constraint
         self._dlm_lock = DlmEngineLock(
             log=self.log,
             ca=self.config.get("main", "ca", fallback=None),
             endpoint=self.config.get("main", "endpoint"),
-            org_id=self.config.get("main", "org_id", fallback="DLMUpdater"),
             secret=self.config.get("main", "secret"),
             secret_id=self.config.get("main", "secret_id"),
             lock_name=self.config.get("main", "lock_name"),
@@ -293,32 +280,41 @@ class DlmEngineUpdater(object):
         return self._config
 
     @property
-    def date_constraint(self):
-        return self._date_constraint
+    def date_constraints(self) -> None | list[dict]:
+        return self._date_constraints
 
-    @date_constraint.setter
-    def date_constraint(self, value):
-        if not value:
+    @date_constraints.setter
+    def date_constraints(self, constraints):
+        if not constraints:
             return
-        try:
-            nth, day = value.split(":", maxsplit=1)
-        except ValueError:
-            self.log.fatal("Invalid date constraint, must match NUM:DAY_ABBR")
-            sys.exit(1)
-        try:
-            nth = int(nth)
-        except ValueError:
-            self.log.fatal("Invalid date constraint, number must be between 1 and 4")
-            sys.exit(1)
-        if nth not in range(1, 5):
-            self.log.fatal("Invalid date constraint, number must be between 1 and 4")
-            sys.exit(1)
-        if day not in calendar.day_abbr:
-            self.log.fatal(
-                f"Invalid date constraint, day must be one of {list(calendar.day_abbr)}"
-            )
-            sys.exit(1)
-        self._date_constraint = {"nth": nth, "day": day}
+        constraints = constraints.split(",")
+        _constraints = list()
+        for constraint in constraints:
+            self.log.info(f"parsing date constraint: {constraint}")
+            try:
+                nth, day = constraint.split(":", maxsplit=1)
+            except ValueError:
+                self.log.fatal("Invalid date constraint, must match NUM:DAY_ABBR")
+                sys.exit(1)
+            try:
+                nth = int(nth)
+            except ValueError:
+                self.log.fatal(
+                    "Invalid date constraint, number must be between 1 and 4"
+                )
+                sys.exit(1)
+            if nth not in range(1, 5):
+                self.log.fatal(
+                    "Invalid date constraint, number must be between 1 and 4"
+                )
+                sys.exit(1)
+            if day not in calendar.day_abbr:
+                self.log.fatal(
+                    f"Invalid date constraint, day must be one of {list(calendar.day_abbr)}"
+                )
+                sys.exit(1)
+            _constraints.append({"nth": nth, "day": day})
+        self._date_constraints = _constraints
 
     @property
     def dlm_lock(self):
@@ -400,32 +396,37 @@ class DlmEngineUpdater(object):
             self.log.fatal(f"could not set state: {err}")
             sys.exit(1)
 
-    def check_date_constraint(self):
-        if not self.date_constraint:
+    def check_date_constraints(self):
+        if not self.date_constraints:
             self.log.info("no date constraint set")
-            return
-        self.log.info(
-            f"date constraint set to {self.date_constraint['nth']}. {self.date_constraint['day']}"
-        )
+            return None
+        self.log.info("checking date constraints")
+        for constraint in self.date_constraints:
+            if self._check_data_constraint(
+                nth=constraint["nth"],
+                day=constraint["day"],
+            ):
+                return True
+        self.log.fatal("no date constraint matched")
+        sys.exit(1)
+
+    def _check_data_constraint(self, nth, day):
+        self.log.info(f"checking constraint {nth}:{day}")
         now = datetime.datetime.now()
         month_start = datetime.datetime(year=now.year, month=now.month, day=1)
         delta = now - month_start
-        if now.strftime("%a") != self.date_constraint["day"]:
-            self.log.fatal(f"today is not {self.date_constraint['day']}")
-            sys.exit(1)
+        if now.strftime("%a") != day:
+            self.log.info(f"today is not {day}")
+            return False
         nth_count = 0
         for i in range(1, delta.days + 2):
             _day = datetime.datetime(year=now.year, month=now.month, day=i)
-            if _day.strftime("%a") == self.date_constraint["day"]:
+            if _day.strftime("%a") == day:
                 nth_count += 1
-        if nth_count != self.date_constraint["nth"]:
-            self.log.fatal(
-                f"today is not the {self.date_constraint['nth']}. {self.date_constraint['day']}"
-            )
-            sys.exit(1)
-        self.log.fatal(
-            f"today is the {self.date_constraint['nth']}. {self.date_constraint['day']}, running dlm_engine_updater"
-        )
+        if nth_count != nth:
+            self.log.info(f"today is not the {nth}. {day}")
+            return False
+        self.log.fatal(f"today is the {nth}. {day}, running dlm_engine_updater")
         return True
 
     def check_reboot(self):
@@ -616,7 +617,7 @@ class DlmEngineUpdater(object):
             self.task = "post_update"
 
     def work(self):
-        self.check_date_constraint()
+        self.check_date_constraints()
         self.lock.acquire()
         self.check_reboot()
         self.random_sleep()
