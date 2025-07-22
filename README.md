@@ -12,7 +12,7 @@ The DLM (Distributed Lock Manager) Engine Updater is a sophisticated Linux syste
 
 ## Installation
 ``` bash
-pip install dlm-engine-updater
+pip install dlmengineupdater
 ```
 ## Configuration
 Create the configuration file at : `/etc/dlm_engine_updater/config.ini`
