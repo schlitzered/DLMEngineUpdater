@@ -359,9 +359,14 @@ class DlmEngineUpdater(object):
         time.sleep(sleep)
         self.log.info(f"sleeping {sleep} seconds,done ")
 
-    def execute_shell(self, args):
+    def execute_shell(self, args, env=None):
+        if not env:
+            env = {}
+        env["DLM_ENGINE_UPDATER_LOCK_NAME"] = (self.dlm_lock.lock_name,)
+        env["DLM_ENGINE_UPDATER_PHASE"] = (self.task,)
         p = subprocess.Popen(
             args,
+            env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             universal_newlines=True,
