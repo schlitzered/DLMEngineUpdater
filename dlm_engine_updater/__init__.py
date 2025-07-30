@@ -280,7 +280,7 @@ class DlmEngineUpdater(object):
         return self._config
 
     @property
-    def date_constraints(self) -> None | list[dict]:
+    def date_constraints(self):
         return self._date_constraints
 
     @date_constraints.setter
@@ -362,8 +362,8 @@ class DlmEngineUpdater(object):
     def execute_shell(self, args, env=None):
         if not env:
             env = {}
-        env["DLM_ENGINE_UPDATER_LOCK_NAME"] = (self.dlm_lock.lock_name,)
-        env["DLM_ENGINE_UPDATER_PHASE"] = (self.task,)
+        env["DLM_ENGINE_UPDATER_LOCK_NAME"] = self.dlm_lock.lock_name
+        env["DLM_ENGINE_UPDATER_PHASE"] = self.task
         p = subprocess.Popen(
             args,
             env=env,
