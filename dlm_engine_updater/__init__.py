@@ -5,6 +5,7 @@ import datetime
 import subprocess
 import logging
 import os
+import pwd
 import random
 import socket
 import stat
@@ -274,6 +275,7 @@ class DlmEngineUpdater(object):
             wait_max=self.config.getint("main", "wait_max", fallback=3600),
         )
         self._dlm_lock_acquired = False
+        self._user_scripts_users = None
 
     @property
     def config(self):
@@ -336,6 +338,28 @@ class DlmEngineUpdater(object):
     def after_reboot(self):
         return self._after_reboot
 
+    @property
+    def user_scripts_enable(self):
+        return self.config.getboolean("main", "user_scripts", fallback=False)
+
+    @property
+    def user_script_users(self):
+        if self._user_scripts_users is None:
+            self._user_scripts_users = list()
+            cfg_users = self.config.get("main", "user_script_users", fallback=None)
+            if cfg_users:
+                cfg_users = [u.strip() for u in cfg_users.split(",") if u.strip()]
+            else:
+                return self._user_scripts_users
+            for user in pwd.getpwall():
+                if user.pw_name in cfg_users:
+                    self._user_scripts_users.append(user)
+        return self._user_scripts_users
+
+    @property
+    def user_root(self):
+        return pwd.getpwnam("root")
+
     def _logging(self):
         logfmt = logging.Formatter(
             "%(asctime)sUTC - %(levelname)s - %(threadName)s - %(message)s"
@@ -359,11 +383,18 @@ class DlmEngineUpdater(object):
         time.sleep(sleep)
         self.log.info(f"sleeping {sleep} seconds,done ")
 
-    def execute_shell(self, args, env=None):
+    def execute_shell(self, args, user, env=None):
         if not env:
             env = {}
         env["DLM_ENGINE_UPDATER_LOCK_NAME"] = self.dlm_lock.lock_name
         env["DLM_ENGINE_UPDATER_PHASE"] = self.task
+        env.setdefault("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+        env.setdefault("USER", user)
+        env.setdefault("LOGNAME", user)
+        pwent = pwd.getpwnam(user)
+        env.setdefault("HOME", pwent.pw_dir)
+        if user != "root":
+            args = ["sudo", "-n", "-E", "-u", user] + args
         p = subprocess.Popen(
             args,
             env=env,
@@ -462,7 +493,7 @@ class DlmEngineUpdater(object):
 
     def do_ext_notify(self, phase, script, return_code, updater_running=True):
         files = self.get_scripts("ext_notify.d")
-        for _file in files:
+        for _file, _user in files:
             self.log.info(f"running ext notify script: {_file}")
             self.execute_shell(
                 [
@@ -473,12 +504,13 @@ class DlmEngineUpdater(object):
                     phase,
                     script,
                     str(return_code),
-                ]
+                ],
+                user=_user,
             )
 
     def on_failure(self, phase, script, return_code, updater_running=True):
         files = self.get_scripts("on_failure.d", fallback_path="on_failure.d")
-        for _file in files:
+        for _file, _user in files:
             self.log.info(f"running on failure script: {_file}")
             self.execute_shell(
                 [
@@ -489,37 +521,55 @@ class DlmEngineUpdater(object):
                     phase,
                     script,
                     str(return_code),
-                ]
+                ],
+                user=_user,
             )
 
-    def get_scripts(self, path, fallback_path=None):
+    def get_scripts(self, path, fallback_path=None, skip_user_scripts=True):
         if fallback_path:
             _path = self.config.get("main", path, fallback=fallback_path)
         else:
             _path = self.config.get("main", path)
+        scripts = list()
+        for script in self._get_scripts(_path, self.user_root, fallback_path):
+            scripts.append([script, self.user_root.pw_name])
+
+        base_dir = os.path.split(path)[1]
+
+        if self.user_scripts_enable and not skip_user_scripts:
+            for user in self.user_script_users:
+                _path = os.path.join(user.pw_dir, "dlm_engine_updater", base_dir)
+                for script in self._get_scripts(_path, user):
+                    scripts.append([script, user.pw_name])
+
+        scripts.sort()
+        return scripts
+
+    def _get_scripts(self, path, user, fallback_path=None):
+        user_name = user.pw_name
+
         files = list()
         try:
-            candidates = os.listdir(_path)
+            candidates = os.listdir(path)
         except FileNotFoundError as err:
-            self.log.fatal(f"could not list directory: {err}")
-            sys.exit(1)
-        candidates.sort()
+            self.log.debug(f"script directory not found for {user_name}: {err}")
+            return files
         for _file in candidates:
-            _file = os.path.join(_path, _file)
+            _file = os.path.join(path, _file)
             self.log.debug(f"found the file: {_file}")
             if not os.path.isfile(_file):
                 continue
-            if not os.stat(_file).st_uid == 0:
-                self.log.warning("file not owned by root")
+            if not os.stat(_file).st_uid == user.pw_uid:
+                self.log.warning(f"file not owned by {user_name}")
                 continue
             if os.stat(_file).st_mode & stat.S_IXUSR != 64:
-                self.log.warning("file not executable by root")
+                self.log.warning(f"file not executable by {user_name}")
                 continue
             if os.stat(_file).st_mode & stat.S_IWOTH == 2:
-                self.log.warning("file group writeable")
+                self.log.warning("file world writeable")
                 continue
             if os.stat(_file).st_mode & stat.S_IWGRP == 16:
-                self.log.warning("file world writeable")
+                self.log.warning("file group writeable")
                 continue
             files.append(_file)
         return files
@@ -528,9 +578,9 @@ class DlmEngineUpdater(object):
         update = False
         self.log.info("checking if updates are available")
         files = self.get_scripts("needs_update.d")
-        for _file in files:
+        for _file, _user in files:
             self.log.info(f"running: {_file}")
-            return_code = self.execute_shell([_file])
+            return_code = self.execute_shell([_file], user=_user)
             if return_code != 0:
                 self.log.info("updates are available")
                 update = True
@@ -550,9 +600,9 @@ class DlmEngineUpdater(object):
     def update(self):
         self.log.info("running_update scripts")
         files = self.get_scripts("update.d")
-        for _file in files:
+        for _file, _user in files:
             self.log.info(f"running: {_file}")
-            return_code = self.execute_shell([_file])
+            return_code = self.execute_shell([_file], user=_user)
             if return_code != 0:
                 self.log.info("script failed, stopping, keeping lock")
                 self.on_failure(phase="update", script=_file, return_code=return_code)
@@ -564,10 +614,10 @@ class DlmEngineUpdater(object):
     def post_update(self):
         self.log.info("running post_update scripts")
         self.dlm_lock_acquired = True
-        files = self.get_scripts("post_update.d")
-        for _file in files:
+        files = self.get_scripts("post_update.d", skip_user_scripts=False)
+        for _file, _user in files:
             self.log.info(f"running: {_file}")
-            return_code = self.execute_shell([_file])
+            return_code = self.execute_shell([_file], user=_user)
             if return_code != 0:
                 self.log.info("script failed, stopping, keeping lock")
                 self.on_failure(
@@ -582,10 +632,10 @@ class DlmEngineUpdater(object):
 
     def pre_update(self):
         self.log.info("running pre_update scripts")
-        files = self.get_scripts("pre_update.d")
-        for _file in files:
+        files = self.get_scripts("pre_update.d", skip_user_scripts=False)
+        for _file, _user in files:
             self.log.info(f"running: {_file}")
-            return_code = self.execute_shell([_file])
+            return_code = self.execute_shell([_file], user=_user)
             if return_code != 0:
                 self.log.info("script failed, stopping, keeping lock")
                 self.on_failure(
@@ -601,15 +651,15 @@ class DlmEngineUpdater(object):
     def reboot(self):
         self.log.info("rebooting")
         self.task = "post_update"
-        sys.exit(self.execute_shell([self.config.get("main", "reboot_cmd")]))
+        sys.exit(self.execute_shell([self.config.get("main", "reboot_cmd")], "root"))
 
     def needs_reboot(self):
         self.log.info("running needs reboot scripts")
         reboot = True
         files = self.get_scripts("needs_reboot.d")
-        for _file in files:
+        for _file, _user in files:
             self.log.info(f"running: {_file}")
-            return_code = self.execute_shell([_file])
+            return_code = self.execute_shell([_file], user=_user)
             if return_code != 0:
                 self.log.info(f"running: {_file} done")
                 self.do_ext_notify(
