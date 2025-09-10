@@ -339,10 +339,6 @@ class DlmEngineUpdater(object):
         return self._after_reboot
 
     @property
-    def user_scripts_enable(self):
-        return self.config.getboolean("main", "user_scripts", fallback=False)
-
-    @property
     def user_script_users(self):
         if self._user_scripts_users is None:
             self._user_scripts_users = list()
@@ -538,7 +534,7 @@ class DlmEngineUpdater(object):
 
         base_dir = os.path.split(path)[1]
 
-        if self.user_scripts_enable and not skip_user_scripts:
+        if self.user_script_users and not skip_user_scripts:
             for user in self.user_script_users:
                 _path = os.path.join(user.pw_dir, "dlm_engine_updater", base_dir)
                 for script in self._get_scripts(_path, user):
