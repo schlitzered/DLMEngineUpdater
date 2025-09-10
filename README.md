@@ -5,6 +5,7 @@ The DLM (Distributed Lock Manager) Engine Updater is a sophisticated Linux syste
 - **Distributed Locking**: Prevents multiple systems from updating simultaneously
 - **State Management**: Maintains update state across reboots and failures
 - **Flexible Script Execution**: Supports custom scripts at each phase of the update process
+- **User-Specific Scripts**: Allows individual users to run custom pre/post update scripts in $HOME/dlm_engine_updater/(pre|post)_update.d/
 - **Date Constraints**: Allows updates only on specific days (e.g., 3rd Friday of the month)
 - **Comprehensive Logging**: Detailed logging with rotation and configurable levels
 - **Failure Handling**: Maintains locks on failure to prevent cascading issues
