@@ -388,7 +388,9 @@ class DlmEngineUpdater(object):
             env = {}
         env["DLM_ENGINE_UPDATER_LOCK_NAME"] = self.dlm_lock.lock_name
         env["DLM_ENGINE_UPDATER_PHASE"] = self.task
-        env.setdefault("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
+        env.setdefault(
+            "PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        )
         env.setdefault("USER", user)
         env.setdefault("LOGNAME", user)
         pwent = pwd.getpwnam(user)
@@ -542,7 +544,7 @@ class DlmEngineUpdater(object):
                 for script in self._get_scripts(_path, user):
                     scripts.append([script, user.pw_name])
 
-        scripts.sort()
+        scripts.sort(key=lambda x: os.path.basename(x[0]))
         return scripts
 
     def _get_scripts(self, path, user, fallback_path=None):
