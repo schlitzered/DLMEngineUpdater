@@ -347,9 +347,12 @@ class DlmEngineUpdater(object):
                 cfg_users = [u.strip() for u in cfg_users.split(",") if u.strip()]
             else:
                 return self._user_scripts_users
-            for user in pwd.getpwall():
-                if user.pw_name in cfg_users:
-                    self._user_scripts_users.append(user)
+            for user in cfg_users:
+                try:
+                    self._user_scripts_users.append(pwd.getpwnam(user))
+                except KeyError:
+                    self.log.warning(f"user {user} does not exist")
+                    continue
         return self._user_scripts_users
 
     @property
