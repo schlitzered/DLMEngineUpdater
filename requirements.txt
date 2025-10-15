@@ -1,2 +1,4 @@
 httpx
 pep3143daemon
+pydantic
+pydantic-settings
