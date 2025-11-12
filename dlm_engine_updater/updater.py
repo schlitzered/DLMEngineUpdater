@@ -116,6 +116,8 @@ class DlmEngineUpdater:
 
     @property
     def user_script_users(self):
+        self.log.debug(self.config.main.userscriptusers)
+        sys.exit(0)
         if self._user_scripts_users is None:
             self._user_scripts_users = list()
             if not self.config.main.userscriptusers:

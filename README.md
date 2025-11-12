@@ -40,6 +40,8 @@ main_basedir=/etc/dlm_engine_updater
 main_wait=false
 main_waitmax=3600
 
+main_userscriptusers=["user1", "user2", "user3"]
+
 # Plugin configuration
 plugin_dummy_enabled=true
 plugin_dummy_config_key1=value1
