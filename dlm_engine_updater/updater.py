@@ -116,7 +116,6 @@ class DlmEngineUpdater:
 
     @property
     def user_script_users(self):
-        self.log.debug(self.config.main.userscriptusers)
         if self._user_scripts_users is None:
             self._user_scripts_users = list()
             if not self.config.main.userscriptusers:
@@ -167,7 +166,9 @@ class DlmEngineUpdater:
         for line in p.stdout:
             self.log.info(line.rstrip(), phase=phase, script=script)
         p.stdout.close()
-        return p.wait()
+        p_wait = p.wait()
+        self.log.info("subprocess finished", phase=phase, script=script, return_code=p_wait)
+        return p_wait
 
     @property
     def task(self):
