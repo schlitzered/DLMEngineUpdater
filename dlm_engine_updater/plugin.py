@@ -108,6 +108,8 @@ class DlmEnginePluginManager:
         return self._plugins
 
     def _init(self):
+        if not self.config.plugin:
+            return
         for plugin_name, plugin_config in self.config.plugin.items():
             self._init_import(plugin_name, plugin_config)
 

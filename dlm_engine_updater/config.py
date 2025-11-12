@@ -41,9 +41,7 @@ class DlmUpdaterConfig(BaseSettings):
         env_file="/etc/dlm_engine_updater/.env", env_nested_delimiter="_"
     )
     main: DlmUpdaterConfigMain = DlmUpdaterConfigMain()
-    plugin: typing.Optional[dict[str, DlmUpdaterConfigMainPlugin]] = (
-        DlmUpdaterConfigMainPlugin()
-    )
+    plugin: typing.Optional[dict[str, DlmUpdaterConfigMainPlugin]] = None
 
     @model_validator(mode="after")
     @classmethod
