@@ -120,9 +120,12 @@ class DlmEngineUpdater:
             self._user_scripts_users = list()
             if not self.config.main.userscriptusers:
                 return self._user_scripts_users
-            for user in pwd.getpwall():
-                if user.pw_name in self.config.main.userscriptusers:
-                    self._user_scripts_users.append(user)
+            for user in self.config.main.userscriptusers:
+                try:
+                    self._user_scripts_users.append(pwd.getpwnam(user))
+                except KeyError:
+                    self.log.warning(f"user {user} does not exist")
+                    continue
         return self._user_scripts_users
 
     @property
