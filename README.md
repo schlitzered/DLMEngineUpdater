@@ -16,48 +16,36 @@ The DLM (Distributed Lock Manager) Engine Updater is a sophisticated Linux syste
 pip install dlmengineupdater
 ```
 ## Configuration
-Create the configuration file at : `/etc/dlm_engine_updater/config.ini`
-``` ini
-[main]
+Create the configuration file at : `/etc/dlm_engine_updater/.env`
+``` dotenv
+# this only bypasses the API call and runs the update process without locking
+main_api_noop=false
+
+# Required API configuration (sample values for noop mode)
+main_api_lockname=sample-lock
+main_api_endpoint=https://api.example.com/dlm
+main_api_secretid=sample-secret-id
+main_api_secret=sample-secret-key
+
+# Optional API configuration
+main_api_ca=/path/to/ca-certificate.pem
+
 # Logging configuration
-log = /var/log/dlm_engine_updater.log
-log_level = INFO
-log_retention = 30
-# optional list of users allowed to have custom pre and post update scripts
-# in $HOME/dlm_engine_updater/(pre|post)_update.d/
-# example:
-# user_script_users = user1,user2,user3
+main_log_level=DEBUG
+main_log_retention=7
+main_log_file=/var/log/dlm_engine_updater/dlm_engine_updater.log
 
-# Local file lock to prevent multiple instances
-lock = /var/run/dlm_engine_updater.lock
+# Main configuration
+main_basedir=/etc/dlm_engine_updater
+main_wait=false
+main_waitmax=3600
 
-# State file to track update progress
-state = /var/lib/dlm_engine_updater/state
+main_userscriptusers=["user1", "user2", "user3"]
 
-# DLM API configuration
-endpoint = https://dlm.example.com/api/v2/
-secret_id = your-secret-id
-secret = your-secret-key
-ca = /etc/ssl/certs/ca-bundle.crt
-
-# Distributed lock name (shared across related systems)
-lock_name = web-servers-cluster-1
-
-# Wait configuration for lock acquisition
-wait = true
-wait_max = 3600
-
-# Script directories
-needs_update.d = /etc/dlm_engine_updater/needs_update.d/
-pre_update.d = /etc/dlm_engine_updater/pre_update.d/
-update.d = /etc/dlm_engine_updater/update.d/
-needs_reboot.d = /etc/dlm_engine_updater/needs_reboot.d/
-post_update.d = /etc/dlm_engine_updater/post_update.d/
-ext_notify.d = /etc/dlm_engine_updater/ext_notify.d/
-on_failure.d = /etc/dlm_engine_updater/on_failure.d/
-
-# Reboot command
-reboot_cmd = /usr/sbin/shutdown -r now
+# Plugin configuration
+plugin_dummy_enabled=true
+plugin_dummy_config_key1=value1
+plugin_dummy_config_key2=value2
 ```
 ## Patching Workflow
 The DLM Engine Updater follows a comprehensive 8-step workflow:
