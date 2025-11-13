@@ -459,7 +459,6 @@ class DlmEngineUpdater:
 
     def reboot(self):
         self.log.info("rebooting", phase="reboot")
-        self.task = "post_update"
         for _file, _user in self.get_scripts("reboot.d", phase="reboot"):
             self.log.info(f"running: {_file}", phase="reboot")
             return_code = self.execute_shell(
@@ -471,6 +470,8 @@ class DlmEngineUpdater:
                 sys.exit(1)
             self.do_ext_notify(phase="reboot", script=_file, return_code=return_code)
             self.log.info(f"running: {_file} done", phase="reboot")
+        self.task = "post_update"
+        sys.exit(0)
 
     def needs_reboot(self):
         self.log.info("running needs reboot scripts", phase="needs_reboot")
