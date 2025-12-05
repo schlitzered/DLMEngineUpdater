@@ -242,11 +242,3 @@ cat /var/lib/dlm_engine_updater/state
 # View recent logs
 tail -f /var/log/dlm_engine_updater.log
 ```
-## API Compatibility
-The updater supports both DLM API v1 and v2, automatically detecting the version based on the endpoint URL format.
-## Contributing
-Contributions are welcome! Please ensure:
-- Code follows Python best practices
-- Add tests for new functionality
-- Update documentation as needed
-- Follow the existing error handling patterns
