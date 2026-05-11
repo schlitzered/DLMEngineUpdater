@@ -78,12 +78,12 @@ class DlmEngineUpdater:
                 nth = int(nth)
             except ValueError:
                 self.log.fatal(
-                    "Invalid date constraint, number must be between 1 and 4"
+                    "Invalid date constraint, number must be between 1 and 5"
                 )
                 sys.exit(1)
-            if nth not in range(1, 5):
+            if nth not in range(1, 6):
                 self.log.fatal(
-                    "Invalid date constraint, number must be between 1 and 4"
+                    "Invalid date constraint, number must be between 1 and 5"
                 )
                 sys.exit(1)
             if day not in calendar.day_abbr:
