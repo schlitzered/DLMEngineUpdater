@@ -15,6 +15,19 @@ The DLM (Distributed Lock Manager) Engine Updater is a sophisticated Linux syste
 ``` bash
 pip install dlmengineupdater
 ```
+## Development
+Direct dependencies are maintained in `pyproject.toml`, pinned versions in `uv.lock`.
+The development environment lives in `venv/`:
+``` bash
+export UV_PROJECT_ENVIRONMENT=venv
+uv sync
+```
+After changing dependencies, update the lock file and regenerate `requirements.txt`
+(do not edit it by hand):
+``` bash
+uv lock
+uv export --no-dev --no-hashes --no-emit-project --format requirements.txt -o requirements.txt
+```
 ## Configuration
 Create the configuration file at : `/etc/dlm_engine_updater/.env`
 ``` dotenv
@@ -40,6 +53,13 @@ main_basedir=/etc/dlm_engine_updater
 main_wait=false
 main_waitmax=3600
 
+# Lock retry backoff (seconds), exponential with jitter
+main_acquirebackoffbase=10
+main_acquirebackoffmax=120
+main_releasebackoffbase=1
+main_releasebackoffmax=30
+main_releaseattempts=10
+
 main_userscriptusers=["user1", "user2", "user3"]
 
 # Plugin configuration
@@ -64,7 +84,9 @@ exit $?
 ```
 ### 2. Phase **lock_get**
 - Attempts to acquire the distributed lock from the DLM service
-- If `wait=true`, retries with random backoff until seconds `wait_max`
+- If `wait=true`, retries with exponential backoff and jitter until `waitmax` seconds have passed
+  - the delay starts at `acquirebackoffbase` seconds, doubles with every attempt and is capped at `acquirebackoffmax`
+  - each delay is randomized between 50% and 100% of that value
 - If lock acquisition fails, process exits
 - On success, proceeds to pre-update phase
 
@@ -124,6 +146,8 @@ curl -f http://localhost/health || exit 1
 ```
 ### 8. Phase **lock_release**
 - Releases the distributed lock
+- On request errors, retries up to `releaseattempts` times with exponential backoff and jitter
+  (starting at `releasebackoffbase` seconds, capped at `releasebackoffmax`)
 - Cleans up state file
 - Allows other systems to begin their update process
 

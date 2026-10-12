@@ -1,16 +1,21 @@
 [build-system]
-requires = ["hatchling", "hatch-requirements-txt"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
 name = "DlmEngineUpdater"
 version = "1.0.3"
-requires-python = ">=3.4"
+requires-python = ">=3.9"
 authors = [
   {name = "Stephan.Schultchen", email = "stephan.schultchen@gmail.com"},
 ]
 description = "Distributed Lock Engine API OS Updater"
-dynamic = ["dependencies"]
+dependencies = [
+  "httpx",
+  "pep3143daemon",
+  "pydantic>=2",
+  "pydantic-settings>=2",
+]
 license = {file = "LICENSE.txt"}
 keywords = []
 classifiers = [
@@ -23,6 +28,10 @@ dlm_engine_updater = "dlm_engine_updater:main"
 [tool.hatch.build.targets.wheel]
 packages = ["dlm_engine_updater"]
 
-[tool.hatch.metadata.hooks.requirements_txt]
-files = ["requirements.txt"]
+[dependency-groups]
+dev = [
+    "pytest>=8.4.2",
+]
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
