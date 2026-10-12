@@ -1,11 +1,22 @@
 import random
 import socket
-import sys
 import time
 
 import httpx
 
 from dlm_engine_updater.logger import DlmLogger
+
+
+class DlmEngineLockError(Exception):
+    pass
+
+
+class DlmEngineLockAcquireError(DlmEngineLockError):
+    pass
+
+
+class DlmEngineLockReleaseError(DlmEngineLockError):
+    pass
 
 
 class DlmEngineLock:
@@ -19,6 +30,11 @@ class DlmEngineLock:
         endpoint,
         wait,
         wait_max,
+        acquire_backoff_base,
+        acquire_backoff_max,
+        release_backoff_base,
+        release_backoff_max,
+        release_attempts,
         noop,
     ):
         self._ca = ca
@@ -29,12 +45,33 @@ class DlmEngineLock:
         self._dlm_api = None
         self._wait = wait
         self._wait_max = wait_max
+        self._acquire_backoff_base = acquire_backoff_base
+        self._acquire_backoff_max = acquire_backoff_max
+        self._release_backoff_base = release_backoff_base
+        self._release_backoff_max = release_backoff_max
+        self._release_attempts = release_attempts
         self._noop = noop
         self._log = log
+        self._acquired = None
 
     @property
     def log(self) -> DlmLogger:
         return self._log
+
+    @property
+    def acquired(self) -> bool:
+        if self._acquired is None:
+            if self.noop:
+                self.log.info(
+                    "noop mode, assuming lock is not acquired", phase="lock_get"
+                )
+                return False
+            try:
+                self._acquired = bool(self._acquire_check())
+            except httpx.HTTPError as err:
+                self.log.error(f"could not query lock state: {err}", phase="lock_get")
+                return False
+        return self._acquired
 
     @property
     def ca(self):
@@ -85,34 +122,71 @@ class DlmEngineLock:
         return self._wait_max
 
     @property
+    def acquire_backoff_base(self):
+        return self._acquire_backoff_base
+
+    @property
+    def acquire_backoff_max(self):
+        return self._acquire_backoff_max
+
+    @property
+    def release_backoff_base(self):
+        return self._release_backoff_base
+
+    @property
+    def release_backoff_max(self):
+        return self._release_backoff_max
+
+    @property
+    def release_attempts(self):
+        return self._release_attempts
+
+    @property
     def lock_url(self):
         return f"{self.endpoint}locks/{self.lock_name}"
 
     def acquire(self):
         if self.noop:
             self.log.info("noop mode acquire", phase="lock_get")
+            self._acquired = True
             return
         self.log.debug(f"waiting is set to {self.wait}", phase="lock_get")
         self.log.debug(f"max wait time is set to {self.wait_max}", phase="lock_get")
-        if self.wait:
-            _waited = 0
-            while True:
-                if self._acquire():
-                    return
-                else:
-                    if _waited > self.wait_max:
-                        self.log.error(
-                            "exceeded max wait time, quiting", phase="lock_get"
-                        )
-                        sys.exit(1)
-                    _sleep = random.randint(10, 60)
-                    _waited += _sleep + 2
-                    self.log.error(f"sleeping {_sleep} seconds", phase="lock_get")
-                    time.sleep(_sleep)
-        else:
+        if not self.wait:
             if not self._acquire():
-                self.log.error("quiting", phase="lock_get")
-                sys.exit(1)
+                raise DlmEngineLockAcquireError(
+                    f"could not acquire lock: {self.lock_url}"
+                )
+            self._acquired = True
+            return
+        deadline = time.monotonic() + self.wait_max
+        attempt = 0
+        while not self._acquire():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise DlmEngineLockAcquireError(
+                    f"exceeded max wait time of {self.wait_max} seconds"
+                )
+            _sleep = min(
+                self._backoff(
+                    attempt, self.acquire_backoff_base, self.acquire_backoff_max
+                ),
+                remaining,
+            )
+            attempt += 1
+            self.log.info(
+                f"lock not acquired, retrying in {_sleep:.1f} seconds",
+                phase="lock_get",
+            )
+            time.sleep(_sleep)
+        self._acquired = True
+
+    @staticmethod
+    def _backoff(attempt, base, cap):
+        # exponential backoff with equal jitter: delay is between 50% and 100%
+        # of min(cap, base * 2^attempt), to avoid synchronized retries
+        delay = min(cap, base * 2**attempt)
+        return delay / 2 + random.uniform(0, delay / 2)
 
     def _acquire(self):
         self.log.info(f"trying to acquire: {self.lock_url}", phase="lock_get")
@@ -162,10 +236,10 @@ class DlmEngineLock:
     def release(self):
         if self.noop:
             self.log.info("noop mode release", phase="lock_release")
+            self._acquired = False
             return
         self.log.info(f"trying to release: {self.lock_url}", phase="lock_release")
-        retries = 10
-        while retries > 0:
+        for attempt in range(self.release_attempts):
             try:
                 resp = self.dlm_api.request(
                     method="DELETE",
@@ -178,15 +252,23 @@ class DlmEngineLock:
                 self.log.debug(f"http_response is {resp.json()}", phase="lock_release")
                 if resp.status_code == 200:
                     self.log.info("success releasing lock", phase="lock_release")
+                    self._acquired = False
                     return
                 else:
-                    self.log.error(
-                        f"could not release lock: {resp.json()}", phase="lock_release"
+                    raise DlmEngineLockReleaseError(
+                        f"could not release lock: {resp.json()}"
                     )
-                    sys.exit(1)
-            except (httpx.HTTPError, httpx.ConnectError) as err:
-                self.log.error(f"request error, retrying: {err}", phase="lock_release")
-                retries -= 1
-                time.sleep(5)
-        self.log.fatal("could not release lock", phase="lock_release")
-        sys.exit(1)
+            except httpx.HTTPError as err:
+                self.log.error(f"request error: {err}", phase="lock_release")
+            if attempt + 1 < self.release_attempts:
+                _sleep = self._backoff(
+                    attempt, self.release_backoff_base, self.release_backoff_max
+                )
+                self.log.info(
+                    f"retrying release in {_sleep:.1f} seconds", phase="lock_release"
+                )
+                time.sleep(_sleep)
+        raise DlmEngineLockReleaseError(
+            f"could not release lock after {self.release_attempts} attempts: "
+            f"{self.lock_url}"
+        )
