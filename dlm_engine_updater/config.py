@@ -2,6 +2,7 @@ import sys
 import typing
 
 from pydantic import BaseModel
+from pydantic import Field
 from pydantic import model_validator
 from pydantic_settings import BaseSettings
 from pydantic_settings import SettingsConfigDict
@@ -33,6 +34,13 @@ class DlmUpdaterConfigMain(BaseModel):
     basedir: typing.Optional[str] = "/etc/dlm_engine_updater"
     wait: typing.Optional[bool] = False
     waitmax: typing.Optional[int] = 3600
+    acquireattempts: int = Field(default=0, ge=0)
+    acquirebackoffbase: float = Field(default=10, gt=0)
+    acquirebackoffmax: float = Field(default=120, gt=0)
+    releasebackoffbase: float = Field(default=1, gt=0)
+    releasebackoffmax: float = Field(default=30, gt=0)
+    releaseattempts: int = Field(default=10, ge=1)
+    resetstateonreleasefailure: bool = False
     userscriptusers: typing.Optional[typing.List[str]] = None
 
 

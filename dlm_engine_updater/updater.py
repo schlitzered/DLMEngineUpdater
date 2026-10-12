@@ -11,6 +11,7 @@ import time
 from pep3143daemon import PidFile
 
 from dlm_engine_updater.config import DlmUpdaterConfig
+from dlm_engine_updater.errors import DlmEngineLockError
 from dlm_engine_updater.lock import DlmEngineLock
 from dlm_engine_updater.logger import DlmLogger
 from dlm_engine_updater.plugin import DlmEnginePluginManager
@@ -39,9 +40,14 @@ class DlmEngineUpdater:
             lock_name=self.config.main.api.lockname,
             wait=self.config.main.wait,
             wait_max=self._config.main.waitmax,
+            acquire_attempts=self.config.main.acquireattempts,
+            acquire_backoff_base=self.config.main.acquirebackoffbase,
+            acquire_backoff_max=self.config.main.acquirebackoffmax,
+            release_backoff_base=self.config.main.releasebackoffbase,
+            release_backoff_max=self.config.main.releasebackoffmax,
+            release_attempts=self.config.main.releaseattempts,
             noop=self.config.main.api.noop,
         )
-        self._dlm_lock_acquired = False
         self._user_scripts_users = None
         self._user_root = None
 
@@ -97,14 +103,6 @@ class DlmEngineUpdater:
     @property
     def dlm_lock(self):
         return self._dlm_lock
-
-    @property
-    def dlm_lock_acquired(self):
-        return self._dlm_lock_acquired
-
-    @dlm_lock_acquired.setter
-    def dlm_lock_acquired(self, value):
-        self._dlm_lock_acquired = value
 
     @property
     def lock(self):
@@ -243,15 +241,28 @@ class DlmEngineUpdater:
                 )
 
     def dlm_lock_get(self):
-        self.dlm_lock.acquire()
-        self.dlm_lock_acquired = True
+        try:
+            self.dlm_lock.acquire()
+        except DlmEngineLockError as err:
+            self.log.error(f"{err}, quitting", phase="lock_get")
+            sys.exit(1)
         self.do_ext_notify(phase="main", script="none", return_code=0)
         self.task = "pre_update"
 
     def dlm_lock_release(self):
         self.log.info("releasing lock")
-        self.dlm_lock.release()
-        self.dlm_lock_acquired = False
+        try:
+            self.dlm_lock.release()
+        except DlmEngineLockError as err:
+            self.log.error(f"{err}, quitting", phase="lock_release")
+            if self.config.main.resetstateonreleasefailure:
+                self.log.warning(
+                    "resetting state file, the lock might still be held "
+                    "and has to be released manually",
+                    phase="lock_release",
+                )
+                del self.task
+            sys.exit(1)
         self.do_ext_notify(
             phase="main", script="none", return_code=0, updater_running=False
         )
@@ -266,7 +277,7 @@ class DlmEngineUpdater:
                 [
                     _file,
                     self.dlm_lock.lock_name,
-                    str(self.dlm_lock_acquired),
+                    str(self.dlm_lock.acquired),
                     str(updater_running),
                     phase,
                     script,
@@ -285,7 +296,7 @@ class DlmEngineUpdater:
                 [
                     _file,
                     self.dlm_lock.lock_name,
-                    str(self.dlm_lock_acquired),
+                    str(self.dlm_lock.acquired),
                     str(updater_running),
                     phase,
                     script,
@@ -385,7 +396,6 @@ class DlmEngineUpdater:
 
     def post_update(self):
         self.log.info("running post_update scripts", phase="post_update")
-        self.dlm_lock_acquired = True
         if not self.plugin_manager.run(
             hook_type=PluginHookType.PHASE,
             timing=PluginTiming.PRE,
