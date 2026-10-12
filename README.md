@@ -151,6 +151,8 @@ curl -f http://localhost/health || exit 1
 - Releases the distributed lock
 - On request errors, retries up to `releaseattempts` times with exponential backoff and jitter
   (starting at `releasebackoffbase` seconds, capped at `releasebackoffmax`)
+- If the lock no longer exists (HTTP 404), the release counts as successful and a warning
+  is logged that the lock was released outside of dlm_engine_updater
 - Cleans up state file
 - Allows other systems to begin their update process
 

@@ -249,14 +249,21 @@ class DlmEngineLock:
                 self.log.debug(
                     f"http status_code is: {resp.status_code}", phase="lock_release"
                 )
-                self.log.debug(f"http_response is {resp.json()}", phase="lock_release")
+                self.log.debug(f"http_response is {resp.text}", phase="lock_release")
                 if resp.status_code == 200:
                     self.log.info("success releasing lock", phase="lock_release")
                     self._acquired = False
                     return
+                elif resp.status_code == 404:
+                    self.log.warning(
+                        "lock not found, it was released outside of dlm_engine_updater",
+                        phase="lock_release",
+                    )
+                    self._acquired = False
+                    return
                 else:
                     raise DlmEngineLockReleaseError(
-                        f"could not release lock: {resp.json()}"
+                        f"could not release lock: {resp.text}"
                     )
             except httpx.HTTPError as err:
                 self.log.error(f"request error: {err}", phase="lock_release")

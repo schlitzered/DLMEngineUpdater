@@ -150,10 +150,22 @@ class TestRelease:
         # no sleep after the last attempt
         assert len(clock["sleeps"]) == 3
 
+    def test_not_found_counts_as_success(self, clock):
+        lock = make_lock()
+        lock._acquired = True
+        lock._dlm_api = mock.Mock()
+        lock._dlm_api.request.return_value = mock.Mock(status_code=404)
+        lock.release()
+        assert lock.acquired is False
+        assert lock._dlm_api.request.call_count == 1
+        assert clock["sleeps"] == []
+        lock.log.warning.assert_called_once()
+        assert "outside of dlm_engine_updater" in lock.log.warning.call_args[0][0]
+
     def test_error_response_fails_immediately(self, clock):
         lock = make_lock()
         lock._dlm_api = mock.Mock()
-        lock._dlm_api.request.return_value = mock.Mock(status_code=404)
+        lock._dlm_api.request.return_value = mock.Mock(status_code=403)
         with pytest.raises(DlmEngineLockReleaseError):
             lock.release()
         assert lock._dlm_api.request.call_count == 1
