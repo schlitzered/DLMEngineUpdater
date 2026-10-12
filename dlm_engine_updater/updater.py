@@ -255,6 +255,13 @@ class DlmEngineUpdater:
             self.dlm_lock.release()
         except DlmEngineLockError as err:
             self.log.error(f"{err}, quitting", phase="lock_release")
+            if self.config.main.resetstateonreleasefailure:
+                self.log.warning(
+                    "resetting state file, the lock might still be held "
+                    "and has to be released manually",
+                    phase="lock_release",
+                )
+                del self.task
             sys.exit(1)
         self.do_ext_notify(
             phase="main", script="none", return_code=0, updater_running=False

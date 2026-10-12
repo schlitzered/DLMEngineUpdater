@@ -40,6 +40,7 @@ class DlmUpdaterConfigMain(BaseModel):
     releasebackoffbase: float = Field(default=1, gt=0)
     releasebackoffmax: float = Field(default=30, gt=0)
     releaseattempts: int = Field(default=10, ge=1)
+    resetstateonreleasefailure: bool = False
     userscriptusers: typing.Optional[typing.List[str]] = None
 
 

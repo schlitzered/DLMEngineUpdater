@@ -61,6 +61,9 @@ main_acquirebackoffmax=120
 main_releasebackoffbase=1
 main_releasebackoffmax=30
 main_releaseattempts=10
+# reset the state file if releasing the lock fails, so the next run starts
+# from the beginning instead of retrying the release
+main_resetstateonreleasefailure=false
 
 main_userscriptusers=["user1", "user2", "user3"]
 
@@ -153,6 +156,10 @@ curl -f http://localhost/health || exit 1
   (starting at `releasebackoffbase` seconds, capped at `releasebackoffmax`)
 - If the lock no longer exists (HTTP 404), the release counts as successful and a warning
   is logged that the lock was released outside of dlm_engine_updater
+- If releasing fails, the process exits with code 1 and the state stays at `lock_release`,
+  so the next run retries the release. With `resetstateonreleasefailure=true` the state
+  file is removed instead and the next run starts from the beginning; the lock may then
+  still be held and has to be released manually
 - Cleans up state file
 - Allows other systems to begin their update process
 

@@ -12,6 +12,7 @@ def test_lock_retry_defaults():
     assert main.releasebackoffbase == 1
     assert main.releasebackoffmax == 30
     assert main.releaseattempts == 10
+    assert main.resetstateonreleasefailure is False
 
 
 @pytest.mark.parametrize(
