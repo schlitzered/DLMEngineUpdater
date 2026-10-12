@@ -34,6 +34,7 @@ class DlmUpdaterConfigMain(BaseModel):
     basedir: typing.Optional[str] = "/etc/dlm_engine_updater"
     wait: typing.Optional[bool] = False
     waitmax: typing.Optional[int] = 3600
+    acquireattempts: int = Field(default=0, ge=0)
     acquirebackoffbase: float = Field(default=10, gt=0)
     acquirebackoffmax: float = Field(default=120, gt=0)
     releasebackoffbase: float = Field(default=1, gt=0)

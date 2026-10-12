@@ -54,6 +54,8 @@ main_wait=false
 main_waitmax=3600
 
 # Lock retry backoff (seconds), exponential with jitter
+# acquireattempts=0 means no limit, only waitmax applies
+main_acquireattempts=0
 main_acquirebackoffbase=10
 main_acquirebackoffmax=120
 main_releasebackoffbase=1
@@ -85,6 +87,7 @@ exit $?
 ### 2. Phase **lock_get**
 - Attempts to acquire the distributed lock from the DLM service
 - If `wait=true`, retries with exponential backoff and jitter until `waitmax` seconds have passed
+  - gives up earlier after `acquireattempts` attempts, if set (0 = no limit)
   - the delay starts at `acquirebackoffbase` seconds, doubles with every attempt and is capped at `acquirebackoffmax`
   - each delay is randomized between 50% and 100% of that value
 - If lock acquisition fails, process exits

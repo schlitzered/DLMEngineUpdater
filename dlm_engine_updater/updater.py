@@ -40,6 +40,7 @@ class DlmEngineUpdater:
             lock_name=self.config.main.api.lockname,
             wait=self.config.main.wait,
             wait_max=self._config.main.waitmax,
+            acquire_attempts=self.config.main.acquireattempts,
             acquire_backoff_base=self.config.main.acquirebackoffbase,
             acquire_backoff_max=self.config.main.acquirebackoffmax,
             release_backoff_base=self.config.main.releasebackoffbase,

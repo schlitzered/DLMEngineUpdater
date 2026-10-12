@@ -20,6 +20,7 @@ class DlmEngineLock:
         endpoint,
         wait,
         wait_max,
+        acquire_attempts,
         acquire_backoff_base,
         acquire_backoff_max,
         release_backoff_base,
@@ -35,6 +36,7 @@ class DlmEngineLock:
         self._dlm_api = None
         self._wait = wait
         self._wait_max = wait_max
+        self._acquire_attempts = acquire_attempts
         self._acquire_backoff_base = acquire_backoff_base
         self._acquire_backoff_max = acquire_backoff_max
         self._release_backoff_base = release_backoff_base
@@ -112,6 +114,10 @@ class DlmEngineLock:
         return self._wait_max
 
     @property
+    def acquire_attempts(self):
+        return self._acquire_attempts
+
+    @property
     def acquire_backoff_base(self):
         return self._acquire_backoff_base
 
@@ -152,6 +158,11 @@ class DlmEngineLock:
         deadline = time.monotonic() + self.wait_max
         attempt = 0
         while not self._acquire():
+            attempt += 1
+            if self.acquire_attempts and attempt >= self.acquire_attempts:
+                raise DlmEngineLockAcquireError(
+                    f"could not acquire lock after {attempt} attempts"
+                )
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise DlmEngineLockAcquireError(
@@ -159,11 +170,10 @@ class DlmEngineLock:
                 )
             _sleep = min(
                 self._backoff(
-                    attempt, self.acquire_backoff_base, self.acquire_backoff_max
+                    attempt - 1, self.acquire_backoff_base, self.acquire_backoff_max
                 ),
                 remaining,
             )
-            attempt += 1
             self.log.info(
                 f"lock not acquired, retrying in {_sleep:.1f} seconds",
                 phase="lock_get",
