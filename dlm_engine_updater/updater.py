@@ -11,8 +11,8 @@ import time
 from pep3143daemon import PidFile
 
 from dlm_engine_updater.config import DlmUpdaterConfig
+from dlm_engine_updater.errors import DlmEngineLockError
 from dlm_engine_updater.lock import DlmEngineLock
-from dlm_engine_updater.lock import DlmEngineLockError
 from dlm_engine_updater.logger import DlmLogger
 from dlm_engine_updater.plugin import DlmEnginePluginManager
 from dlm_engine_updater.plugin import PluginHookType

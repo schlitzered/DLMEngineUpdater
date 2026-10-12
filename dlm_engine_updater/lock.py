@@ -4,19 +4,9 @@ import time
 
 import httpx
 
+from dlm_engine_updater.errors import DlmEngineLockAcquireError
+from dlm_engine_updater.errors import DlmEngineLockReleaseError
 from dlm_engine_updater.logger import DlmLogger
-
-
-class DlmEngineLockError(Exception):
-    pass
-
-
-class DlmEngineLockAcquireError(DlmEngineLockError):
-    pass
-
-
-class DlmEngineLockReleaseError(DlmEngineLockError):
-    pass
 
 
 class DlmEngineLock:
