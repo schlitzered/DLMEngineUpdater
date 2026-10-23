@@ -187,6 +187,15 @@ class TestAcquireRequest:
         lock._dlm_api.get.return_value = httpx.Response(200, text="not json")
         assert lock.acquired is False
 
+    def test_check_json_without_acquired_by(self):
+        lock = make_lock()
+        lock._dlm_api = mock.Mock()
+        lock._dlm_api.get.return_value = json_response(200, {"detail": "unexpected"})
+        lock._dlm_api.post.return_value = json_response(
+            400, {"detail": "Duplicate Resource"}
+        )
+        assert lock._acquire() is False
+
 
 class TestRelease:
     def test_success(self, clock):
@@ -239,6 +248,29 @@ class TestRelease:
         with pytest.raises(DlmEngineLockReleaseError):
             lock.release()
         assert lock._dlm_api.request.call_count == 1
+
+    def test_retries_on_server_error(self, clock):
+        lock = make_lock()
+        lock._acquired = True
+        lock._dlm_api = mock.Mock()
+        lock._dlm_api.request.side_effect = [
+            bad_gateway(),
+            httpx.Response(503, text="Service Unavailable"),
+            json_response(200, {}),
+        ]
+        lock.release()
+        assert lock.acquired is False
+        assert lock._dlm_api.request.call_count == 3
+        assert len(clock["sleeps"]) == 2
+
+    def test_server_error_attempts_exceeded(self, clock):
+        lock = make_lock(release_attempts=4)
+        lock._dlm_api = mock.Mock()
+        lock._dlm_api.request.return_value = bad_gateway()
+        with pytest.raises(DlmEngineLockReleaseError, match="4 attempts"):
+            lock.release()
+        assert lock._dlm_api.request.call_count == 4
+        assert len(clock["sleeps"]) == 3
 
     def test_noop(self, clock):
         lock = make_lock(noop=True)
