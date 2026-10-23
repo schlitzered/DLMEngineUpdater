@@ -223,9 +223,10 @@ class DlmEngineLock:
         if not resp.status_code == 200:
             self.log.info("lock currently not present in the system", phase="lock_get")
             return None
-        if not resp.json()["acquired_by"] == socket.getfqdn():
+        acquired_by = resp.json().get("acquired_by")
+        if not acquired_by == socket.getfqdn():
             self.log.info(
-                f"lock is currently acquired by {resp.json()['acquired_by']}",
+                f"lock is currently acquired by {acquired_by}",
                 phase="lock_get",
             )
             return None
@@ -263,6 +264,13 @@ class DlmEngineLock:
                     )
                     self._acquired = False
                     return
+                elif resp.status_code >= 500:
+                    # server side errors are usually transient, e.g. a 502 from a
+                    # load balancer while a dlm engine node is restarting
+                    self.log.error(
+                        f"server error {resp.status_code}: {resp.text}",
+                        phase="lock_release",
+                    )
                 else:
                     raise DlmEngineLockReleaseError(
                         f"could not release lock: {resp.text}"
