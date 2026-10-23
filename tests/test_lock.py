@@ -118,6 +118,76 @@ class TestAcquire:
         assert lock.acquired is True
 
 
+def json_response(status_code, body):
+    return httpx.Response(status_code, json=body)
+
+
+def bad_gateway():
+    # load balancers answer with an html body (or none at all), not json
+    return httpx.Response(502, text="<html><body>502 Bad Gateway</body></html>")
+
+
+class TestAcquireRequest:
+    def test_created(self):
+        lock = make_lock()
+        lock._dlm_api = mock.Mock()
+        lock._dlm_api.get.return_value = json_response(404, {"detail": "not found"})
+        lock._dlm_api.post.return_value = json_response(201, {"id": "lock"})
+        assert lock._acquire() is True
+
+    def test_held_by_other_host(self):
+        lock = make_lock()
+        lock._dlm_api = mock.Mock()
+        lock._dlm_api.get.return_value = json_response(
+            200, {"acquired_by": "other.example.com"}
+        )
+        lock._dlm_api.post.return_value = json_response(
+            400, {"detail": "Duplicate Resource"}
+        )
+        assert lock._acquire() is False
+
+    def test_post_non_json_response(self):
+        lock = make_lock()
+        lock._dlm_api = mock.Mock()
+        lock._dlm_api.get.return_value = json_response(
+            200, {"acquired_by": "other.example.com"}
+        )
+        lock._dlm_api.post.return_value = bad_gateway()
+        assert lock._acquire() is False
+
+    def test_check_non_json_response(self):
+        lock = make_lock()
+        lock._dlm_api = mock.Mock()
+        lock._dlm_api.get.return_value = httpx.Response(200, text="not json")
+        assert lock._acquire() is False
+        lock._dlm_api.post.assert_not_called()
+
+    def test_check_connection_error(self):
+        lock = make_lock()
+        lock._dlm_api = mock.Mock()
+        lock._dlm_api.get.side_effect = httpx.ConnectError("connection refused")
+        assert lock._acquire() is False
+        lock._dlm_api.post.assert_not_called()
+
+    def test_retries_after_bad_gateway(self, clock):
+        lock = make_lock()
+        lock._dlm_api = mock.Mock()
+        lock._dlm_api.get.return_value = json_response(404, {"detail": "not found"})
+        lock._dlm_api.post.side_effect = [
+            bad_gateway(),
+            json_response(201, {"id": "lock"}),
+        ]
+        lock.acquire()
+        assert lock.acquired is True
+        assert len(clock["sleeps"]) == 1
+
+    def test_acquired_property_non_json_response(self):
+        lock = make_lock()
+        lock._dlm_api = mock.Mock()
+        lock._dlm_api.get.return_value = httpx.Response(200, text="not json")
+        assert lock.acquired is False
+
+
 class TestRelease:
     def test_success(self, clock):
         lock = make_lock()

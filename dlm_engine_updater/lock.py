@@ -60,7 +60,7 @@ class DlmEngineLock:
                 return False
             try:
                 self._acquired = bool(self._acquire_check())
-            except httpx.HTTPError as err:
+            except (httpx.HTTPError, ValueError) as err:
                 self.log.error(f"could not query lock state: {err}", phase="lock_get")
                 return False
         return self._acquired
@@ -190,25 +190,27 @@ class DlmEngineLock:
 
     def _acquire(self):
         self.log.info(f"trying to acquire: {self.lock_url}", phase="lock_get")
-        if self._acquire_check():
-            return True
         try:
+            if self._acquire_check():
+                return True
             resp = self.dlm_api.post(
                 json=self.payload_acquire,
                 timeout=10.0,
                 url=self.lock_url,
             )
             self.log.debug(f"http status_code is: {resp.status_code}", phase="lock_get")
-            self.log.debug(f"http_response is {resp.json()}", phase="lock_get")
+            self.log.debug(f"http_response is {resp.text}", phase="lock_get")
             if resp.status_code == 201:
                 self.log.info("success acquiring lock", phase="lock_get")
                 return True
             else:
                 self.log.error(
-                    f"could not acquire lock: {resp.json()}", phase="lock_get"
+                    f"could not acquire lock: {resp.text}", phase="lock_get"
                 )
                 return False
-        except httpx.HTTPError as err:
+        except (httpx.HTTPError, ValueError) as err:
+            # ValueError covers non-JSON bodies, e.g. a 502 from a load
+            # balancer while a dlm engine node is restarting
             self.log.error(f"request error, retrying: {err}", phase="lock_get")
             return False
 
