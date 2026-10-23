@@ -31,10 +31,14 @@ class DlmLogger:
             "%(asctime)sUTC - %(levelname)s - %(threadName)s - %(message)s"
         )
         logfmt.converter = time.gmtime
-        handlers = []
+        # Close and remove existing handlers to avoid accumulation across logger instances
+        for handler in self._log.handlers[:]:
+            handler.close()
+            self._log.removeHandler(handler)
         aap_level = self.config.main.log.level
         log = self.config.main.log.file
         retention = self.config.main.log.retention
+        handlers = []
         handlers.append(TimedRotatingFileHandler(log, "d", 1, retention))
 
         for handler in handlers:
@@ -50,25 +54,34 @@ class DlmLogger:
         script=None,
         return_code=None,
     ):
-        self.plugin_manager.run(
-            hook_type=PluginHookType.LOGGER,
-            timing=PluginTiming.PRE,
-            level=level,
-            msg=msg,
-            phase=phase,
-            script=script,
-            return_code=return_code,
-        )
-        self._log.log(level, msg)
-        self.plugin_manager.run(
-            hook_type=PluginHookType.LOGGER,
-            timing=PluginTiming.POST,
-            level=level,
-            msg=msg,
-            phase=phase,
-            script=script,
-            return_code=return_code,
-        )
+        try:
+            self.plugin_manager.run(
+                hook_type=PluginHookType.LOGGER,
+                timing=PluginTiming.PRE,
+                level=level,
+                msg=msg,
+                phase=phase,
+                script=script,
+                return_code=return_code,
+            )
+        except Exception:
+            # If a PRE hook fails, still attempt the main log so the message is not lost
+            pass
+        try:
+            self._log.log(level, msg)
+        finally:
+            try:
+                self.plugin_manager.run(
+                    hook_type=PluginHookType.LOGGER,
+                    timing=PluginTiming.POST,
+                    level=level,
+                    msg=msg,
+                    phase=phase,
+                    script=script,
+                    return_code=return_code,
+                )
+            except Exception:
+                pass
 
     def critical(
         self,
@@ -104,7 +117,7 @@ class DlmLogger:
         script=None,
         return_code=None,
     ):
-        self.log(logging.fatal, msg, phase, script, return_code)
+        self.log(logging.FATAL, msg, phase, script, return_code)
 
     def info(
         self,
